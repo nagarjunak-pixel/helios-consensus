@@ -4,9 +4,16 @@
 [![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB.svg)](https://www.python.org/)
 [![C++20 Native](https://img.shields.io/badge/C%2B%2B20-JumpHash%20%2B%20CRC32C-00599C.svg)](csrc/helios_kernels.cpp)
 [![Coverage 97.25%](https://img.shields.io/badge/coverage-97.25%25-10B981.svg)](tests/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-F59E0B.svg)](LICENSE)
+[![Release v1.0.0](https://img.shields.io/badge/release-v1.0.0-1f6feb.svg)](https://github.com/nagarjunak-pixel/helios-consensus/releases/tag/v1.0.0)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-10b981.svg)](LICENSE)
 
 **FoundationDB-Style Deterministic Simulation Testing (DST) Raft Consensus Engine, TLA+-Style Explicit-State BFS Model Checker (`985` Reachable States + Minimal 4-Step Mutant Bug Synthesis), Chained HotStuff 3-Chain BFT Quorum Finality (`N = 3f + 1`), Native C++20 Lamping–Veach Jump Consistent Hash & Castagnoli `CRC32C` WAL Kernels, and Live Ollama (`qwen3.5:4b`) Quorum-Invariant CEGIS Synthesis.**
+
+---
+
+## Live Deterministic Raft DST, TLA+ BFS Prover & HotStuff BFT Workbench
+
+![HeliosConsensus Live Workbench — Deterministic Raft Simulation, 985-State TLA+ BFS Model Checker & Chained HotStuff 3-Chain BFT](docs/assets/workbench-preview.png)
 
 ---
 
@@ -93,3 +100,12 @@ uv run helios serve --host 127.0.0.1 --port 8070
 ## Author & License
 
 Designed and engineered by **Nagarjuna Kamireddy** (`@nagarjunak-pixel`). Released under the [MIT License](LICENSE).
+
+---
+
+## Author & Canonical Portfolio
+
+Engineered by **Nagarjuna Reddy Kamireddy** (*Principal / Lead AI & Distributed Systems Architect · Dubai, UAE*).
+- **Architecture Portfolio & Case Studies:** [https://nagarjunak-pixel.github.io/](https://nagarjunak-pixel.github.io/)
+- **8-Crown Open-Source Suite:** [https://nagarjunak-pixel.github.io/projects.html#helios-consensus](https://nagarjunak-pixel.github.io/projects.html#helios-consensus)
+- **GitHub:** [@nagarjunak-pixel](https://github.com/nagarjunak-pixel) · **LinkedIn:** [in/nagarjuna-kamireddy](https://linkedin.com/in/nagarjuna-kamireddy)

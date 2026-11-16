@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use or reference helios-consensus in distributed systems research or enterprise AI control-plane architecture, please cite it as below."
+type: software
+title: "HeliosConsensus: FoundationDB-Style Deterministic Simulation Raft Engine, Explicit-State TLA+ BFS Model Checker, Chained HotStuff 3-Chain BFT & C++20 Jump-Hash/CRC32C WAL Kernels"
+version: 1.0.0
+date-released: "2026-11-16"
+license: Apache-2.0
+url: "https://nagarjunak-pixel.github.io/projects.html#helios-consensus"
+repository-code: "https://github.com/nagarjunak-pixel/helios-consensus"
+authors:
+  - family-names: "Kamireddy"
+    given-names: "Nagarjuna Reddy"
+    affiliation: "Suryagentic AI"
