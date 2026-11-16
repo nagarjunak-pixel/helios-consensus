@@ -1,0 +1,78 @@
+{
+  "model_name": "qwen3.5:4b",
+  "num_incidents": 6,
+  "raw_safe_count": 3,
+  "raw_safe_pct": 50.0,
+  "verified_safe_count": 5,
+  "verified_safe_pct": 83.33,
+  "safety_lift_pct": 33.33,
+  "zero_split_brain_leakage": true,
+  "outcomes": [
+    {
+      "incident_id": "HC-01-UPRIGHT-HYBRID-BFT",
+      "title": "Hybrid BFT + Crash Cluster Sizing (f=4, c=2)",
+      "expected_safe_quorum_or_fencing": 17,
+      "raw_llm_value": 14,
+      "raw_llm_safe": false,
+      "model_checked_value": null,
+      "model_checked_safe": false,
+      "turns_used": 4,
+      "latency_ms": 2647.6
+    },
+    {
+      "incident_id": "HC-02-FLEXIBLE-PAXOS-WRITE-QUORUM",
+      "title": "Howard Flexible Paxos Asymmetric Quorum",
+      "expected_safe_quorum_or_fencing": 9,
+      "raw_llm_value": 9,
+      "raw_llm_safe": true,
+      "model_checked_value": 9,
+      "model_checked_safe": true,
+      "turns_used": 1,
+      "latency_ms": 832.9
+    },
+    {
+      "incident_id": "HC-03-KLEPPMANN-FENCING-TOKEN",
+      "title": "GC-Pause Split-Brain Storage Fencing",
+      "expected_safe_quorum_or_fencing": 419,
+      "raw_llm_value": 418,
+      "raw_llm_safe": false,
+      "model_checked_value": 419,
+      "model_checked_safe": true,
+      "turns_used": 2,
+      "latency_ms": 1817.1
+    },
+    {
+      "incident_id": "HC-04-SLOPPY-TO-STRICT-DYNAMO",
+      "title": "Strict R+W>N Quorum Under 2 Node Failures",
+      "expected_safe_quorum_or_fencing": 7,
+      "raw_llm_value": 7,
+      "raw_llm_safe": true,
+      "model_checked_value": 7,
+      "model_checked_safe": true,
+      "turns_used": 1,
+      "latency_ms": 666.3
+    },
+    {
+      "incident_id": "HC-05-MULTI-AZ-RAFT-WITNESS",
+      "title": "3-AZ Surviving Whole-AZ + 1 Node Outage",
+      "expected_safe_quorum_or_fencing": 9,
+      "raw_llm_value": 7,
+      "raw_llm_safe": false,
+      "model_checked_value": 9,
+      "model_checked_safe": true,
+      "turns_used": 2,
+      "latency_ms": 1417.1
+    },
+    {
+      "incident_id": "HC-06-SQUARE-GRID-WRITE-QUORUM",
+      "title": "7x7 Cheung Cross-Grid Quorum Cardinality",
+      "expected_safe_quorum_or_fencing": 13,
+      "raw_llm_value": 13,
+      "raw_llm_safe": true,
+      "model_checked_value": 13,
+      "model_checked_safe": true,
+      "turns_used": 1,
+      "latency_ms": 610.6
+    }
+  ]
+}
