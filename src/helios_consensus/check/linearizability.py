@@ -145,8 +145,10 @@ def _unlift(call: _Event) -> None:
         call.next.prev = call
 
 
-def check_register(ops: list[Operation], *, budget: int = 2_000_000) -> tuple[bool, int, bool]:
-    """Returns ``(linearizable, states_explored, budget_exhausted)``."""
+def python_check_register(
+    ops: list[Operation], *, budget: int = 2_000_000
+) -> tuple[bool, int, bool]:
+    """Pure-Python Wing & Gong + Lowe solver; returns ``(ok, explored, budget_exhausted)``."""
     if not ops:
         return True, 0, False
     index_of = {op.op_id: i for i, op in enumerate(ops)}
@@ -184,6 +186,21 @@ def check_register(ops: list[Operation], *, budget: int = 2_000_000) -> tuple[bo
             _unlift(call)
             entry = call.next
     return True, explored, False
+
+
+def check_register(
+    ops: list[Operation], *, budget: int = 2_000_000, force_python: bool = False
+) -> tuple[bool, int, bool]:
+    """Returns ``(linearizable, states_explored, budget_exhausted)``."""
+    if not ops:
+        return True, 0, False
+    if not force_python and len(ops) <= 62:
+        from helios_consensus.kernels.native_ring import get_helios_bridge
+
+        native = get_helios_bridge().wgl_check_register(ops, budget=budget)
+        if native is not None:
+            return native
+    return python_check_register(ops, budget=budget)
 
 
 def check_history(

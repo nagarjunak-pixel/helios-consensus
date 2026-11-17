@@ -7,6 +7,7 @@ from helios_consensus.check.linearizability import (
     OpKind,
     check_history,
     check_register,
+    python_check_register,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "Violation",
     "check_history",
     "check_register",
+    "python_check_register",
 ]
