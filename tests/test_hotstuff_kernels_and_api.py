@@ -152,6 +152,13 @@ async def test_fastapi_endpoints_and_cli_commands(
             await client.post("/api/v1/hotstuff/simulate", json={"byzantine_f": 1, "num_blocks": 3})
         ).status_code == 200
         assert (await client.get("/api/v1/kernels/benchmark")).status_code == 200
+        assert (
+            await client.post(
+                "/api/v1/jepsen/run",
+                json={"num_seeds": 2, "ticks": 300, "use_segmented_wal": True},
+            )
+        ).status_code == 200
+        assert (await client.get("/api/v1/mutants/run")).status_code == 200
         assert (await client.get("/")).status_code == 200
 
     headless = create_app(ui_dist_dir=tmp_path / "empty_ui")
@@ -162,6 +169,12 @@ async def test_fastapi_endpoints_and_cli_commands(
 
     runner = CliRunner()
     for args in (
+        ["jepsen", "--seeds", "2", "--ticks", "300"],
+        ["jepsen", "--seeds", "2", "--ticks", "300", "--json"],
+        ["kill-mutants"],
+        ["kill-mutants", "--json"],
+        ["multiraft"],
+        ["multiraft", "--json"],
         ["simulate-raft"],
         ["simulate-raft", "--json"],
         ["model-check"],

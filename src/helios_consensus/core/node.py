@@ -415,10 +415,18 @@ class RaftNode:
 
     # ======================================================================= follower side
     def _handle_append(self, m: Message) -> None:
-        if m.index < self.log.committed:
-            self._reply_append(m.src, index=self.log.committed)
-            return
-        last_new = self.log.maybe_append(m.index, m.log_term, m.commit, m.entries)
+        prev_idx = m.index
+        prev_term = m.log_term
+        entries = m.entries
+        if prev_idx < self.log.snapshot.index:
+            skip = self.log.snapshot.index - prev_idx
+            if skip >= len(entries):
+                self._reply_append(m.src, index=self.log.committed)
+                return
+            prev_idx = self.log.snapshot.index
+            prev_term = self.log.snapshot.term
+            entries = entries[skip:]
+        last_new = self.log.maybe_append(prev_idx, prev_term, m.commit, entries)
         if last_new is not None:
             self._on_commit_advanced()
             self._reply_append(m.src, index=last_new)
