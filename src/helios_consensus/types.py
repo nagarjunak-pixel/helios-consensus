@@ -95,3 +95,59 @@ class RealConsensusAuditReport(BaseModel):
     safety_lift_pct: float
     zero_split_brain_leakage: bool
     outcomes: list[ConsensusIncidentOutcome]
+
+
+class JepsenSeedSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    seed: int
+    safe: bool
+    linearizable: bool
+    liveness_ok: bool
+    ops_ok: int
+    ops_indeterminate: int
+    elections: int
+    snapshots: int
+    membership_changes: int
+    crashes: int
+    fingerprint: str
+    violations: list[str]
+
+
+class JepsenCampaignReport(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    seeds_executed: int
+    safe_seeds: int
+    liveness_recovered_seeds: int
+    segmented_wal_enabled: bool
+    total_committed_ops: int
+    total_indeterminate_ops: int
+    total_elections: int
+    total_snapshots: int
+    total_membership_changes: int
+    total_crashes_injected: int
+    total_wgl_states_explored: int
+    elapsed_ms: float
+    seed_summaries: list[JepsenSeedSummary]
+
+
+class MutantCaseResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mutant_id: str
+    description: str
+    caught: bool
+    witness_seed: int | None
+    detected_by: list[str]
+    witness_detail: str
+
+
+class MutantSuiteReport(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    total_mutants: int
+    mutants_killed: int
+    kill_rate_pct: float
+    elapsed_ms: float
+    cases: list[MutantCaseResult]

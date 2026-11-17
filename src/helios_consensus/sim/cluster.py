@@ -38,7 +38,7 @@ from helios_consensus.core.node import (
     RaftNode,
     StateRole,
 )
-from helios_consensus.core.segmented_wal import SegmentedWAL, SimulatedDiskFS
+from helios_consensus.core.segmented_wal import SegmentedWAL, SimulatedDiskFS, WalCorruptionError
 from helios_consensus.core.storage import MemoryStorage, Storage
 from helios_consensus.kv.state_machine import KVCommand, KVOp, KVStateMachine
 from helios_consensus.sim.network import NetworkStats, SimNetwork
@@ -240,9 +240,19 @@ class SimCluster:
 
     def _boot(self, node: SimNode) -> None:
         if node.disk is not None:
-            node.storage = SegmentedWAL(
-                node.disk, self.bootstrap, max_segment_bytes=4096, sync=self.cfg.sync_wal
-            )
+            try:
+                node.storage = SegmentedWAL(
+                    node.disk, self.bootstrap, max_segment_bytes=4096, sync=self.cfg.sync_wal
+                )
+            except WalCorruptionError as exc:
+                self.observer.violations.append(
+                    Violation(
+                        invariant="WalDurability",
+                        tick=self.now,
+                        detail=f"n{node.node_id}: {exc}",
+                    )
+                )
+                return
         hs, snap, entries = node.storage.load()
         node.raft = RaftNode(
             node.node_id,
@@ -261,7 +271,7 @@ class SimCluster:
             return
         node.raft = None
         if node.disk is not None:
-            node.disk.power_cut(tear_unsynced_tail=True)
+            node.disk.power_cut(tear_unsynced_tail=self.cfg.sync_wal)
         node.incarnation += 1
         node.restart_at = self.now + restart_after if restart_after is not None else 0
         self.crashes += 1

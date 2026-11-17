@@ -15,10 +15,13 @@ from helios_consensus.audit.ollama_consensus import default_consensus_artifact_p
 from helios_consensus.hotstuff.bft_qc import run_hotstuff_3chain_benchmark
 from helios_consensus.kernels.native_ring import benchmark_jump_hash_and_crc32c, get_helios_bridge
 from helios_consensus.raft.engine import run_raft_dst_partition_benchmark
+from helios_consensus.sim.campaigns import run_jepsen_campaign, run_mutant_killing_suite
 from helios_consensus.types import (
     HotStuffBFTReport,
+    JepsenCampaignReport,
     JumpHashWALReport,
     ModelCheckerReport,
+    MutantSuiteReport,
     RaftDSTReport,
     RealConsensusAuditReport,
 )
@@ -27,6 +30,12 @@ from helios_consensus.verification.model_checker import explore_consensus_state_
 
 class RaftSimRequest(BaseModel):
     cluster_size: int = Field(default=5, ge=3, le=9)
+
+
+class JepsenRequest(BaseModel):
+    num_seeds: int = Field(default=8, ge=1, le=50)
+    ticks: int = Field(default=800, ge=200, le=3000)
+    use_segmented_wal: bool = True
 
 
 class HotStuffRequest(BaseModel):
@@ -107,6 +116,18 @@ def create_app(ui_dist_dir: Path | None = None) -> FastAPI:
     @app.get("/api/v1/kernels/benchmark", response_model=JumpHashWALReport)
     async def wal_bench() -> JumpHashWALReport:
         return benchmark_jump_hash_and_crc32c()
+
+    @app.post("/api/v1/jepsen/run", response_model=JepsenCampaignReport)
+    async def jepsen_run(req: JepsenRequest) -> JepsenCampaignReport:
+        return run_jepsen_campaign(
+            num_seeds=req.num_seeds,
+            ticks=req.ticks,
+            use_segmented_wal=req.use_segmented_wal,
+        )
+
+    @app.get("/api/v1/mutants/run", response_model=MutantSuiteReport)
+    async def mutants_run() -> MutantSuiteReport:
+        return run_mutant_killing_suite()
 
     resolved_dist = ui_dist_dir or (Path(__file__).resolve().parents[3] / "ui" / "dist")
     assets_dir = resolved_dist / "assets"

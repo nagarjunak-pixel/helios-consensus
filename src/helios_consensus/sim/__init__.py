@@ -1,5 +1,6 @@
 """Deterministic simulation testing: network, cluster harness and fault injection."""
 
+from helios_consensus.sim.campaigns import run_jepsen_campaign, run_mutant_killing_suite
 from helios_consensus.sim.cluster import (
     ALL_FAULTS,
     Fault,
@@ -18,5 +19,7 @@ __all__ = [
     "SimConfig",
     "SimNetwork",
     "SimReport",
+    "run_jepsen_campaign",
+    "run_mutant_killing_suite",
     "run_simulation",
 ]
