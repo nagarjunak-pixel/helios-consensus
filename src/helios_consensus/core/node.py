@@ -485,6 +485,8 @@ class RaftNode:
                 pr.become_probe()
             if self._maybe_commit():
                 self._bcast_append()
+        if self.role is not StateRole.LEADER or m.src not in self.progress:
+            return  # committing a config change may have removed this peer or ourselves
         self._send_while_possible(m.src)
         if m.src == self.lead_transferee and pr.match == self.log.last_index:
             self._send(Message(type=MsgType.TIMEOUT_NOW, src=self.id, dst=m.src, term=self.term))
@@ -733,10 +735,11 @@ class RaftNode:
                 pr.state = ProgressState.REPLICATE
                 pr.recent_active = True
             self.progress[member] = pr
-        noop = Entry(index=last + 1, term=self.term, kind=EntryKind.NOOP)
-        self.log.append([noop])
-        self.progress[self.id].maybe_update(noop.index)
-        self.pending_conf_index = noop.index
+        if "commit_prior_term" not in self.cfg.bugs:
+            noop = Entry(index=last + 1, term=self.term, kind=EntryKind.NOOP)
+            self.log.append([noop])
+            self.progress[self.id].maybe_update(noop.index)
+            self.pending_conf_index = noop.index
         self._maybe_commit()
         self._bcast_append()
 
