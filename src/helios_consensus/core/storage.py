@@ -73,11 +73,19 @@ class MemoryStorage:
 
 # ----------------------------------------------------------------------------- encoding
 def _membership_to_json(m: Membership) -> dict[str, list[int]]:
-    return {"voters": sorted(m.voters), "learners": sorted(m.learners)}
+    return {
+        "voters": sorted(m.voters),
+        "learners": sorted(m.learners),
+        "voters_outgoing": sorted(m.voters_outgoing),
+    }
 
 
 def _membership_from_json(raw: dict[str, Any]) -> Membership:
-    return Membership(voters=frozenset(raw["voters"]), learners=frozenset(raw["learners"]))
+    return Membership(
+        voters=frozenset(raw["voters"]),
+        learners=frozenset(raw.get("learners", [])),
+        voters_outgoing=frozenset(raw.get("voters_outgoing", [])),
+    )
 
 
 def snapshot_to_json(s: Snapshot) -> dict[str, Any]:

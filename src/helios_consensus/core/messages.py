@@ -21,22 +21,36 @@ class ConfChangeType(StrEnum):
     ADD_LEARNER = "ADD_LEARNER"
     PROMOTE = "PROMOTE"
     REMOVE = "REMOVE"
+    ENTER_JOINT = "ENTER_JOINT"
+    LEAVE_JOINT = "LEAVE_JOINT"
 
 
 @dataclass(frozen=True, slots=True)
 class ConfChange:
-    """A single-server membership change (Ongaro dissertation, section 4.1)."""
+    """Single-server (§4.1) or Joint Consensus (§6) membership transition."""
 
     change: ConfChangeType
-    node_id: int
+    node_id: int = 0
+    voters: frozenset[int] = frozenset()
 
     def encode(self) -> str:
+        if self.change is ConfChangeType.ENTER_JOINT:
+            joined = ",".join(str(v) for v in sorted(self.voters))
+            return f"{self.change.value}:{joined}"
+        if self.change is ConfChangeType.LEAVE_JOINT:
+            return f"{self.change.value}:0"
         return f"{self.change.value}:{self.node_id}"
 
     @staticmethod
     def decode(raw: str) -> ConfChange:
-        kind, _, node = raw.partition(":")
-        return ConfChange(change=ConfChangeType(kind), node_id=int(node))
+        kind_raw, _, rest = raw.partition(":")
+        kind = ConfChangeType(kind_raw)
+        if kind is ConfChangeType.ENTER_JOINT:
+            voters = frozenset(int(tok) for tok in rest.split(",") if tok)
+            return ConfChange(change=kind, voters=voters)
+        if kind is ConfChangeType.LEAVE_JOINT:
+            return ConfChange(change=kind)
+        return ConfChange(change=kind, node_id=int(rest))
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,24 +63,77 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class Membership:
-    """Voting members plus non-voting learners."""
+    """Cluster configuration supporting both simple majorities and Joint Consensus ``C_{old,new}``.
+
+    When ``voters_outgoing`` is non-empty, ``voters`` represents ``C_new`` and
+    ``voters_outgoing`` represents ``C_old``: elections, commits and ReadIndex barriers
+    require independent majorities from *both* voter sets (Raft paper, section 6).
+    """
 
     voters: frozenset[int]
     learners: frozenset[int] = frozenset()
+    voters_outgoing: frozenset[int] = frozenset()
 
     def __post_init__(self) -> None:
-        overlap = self.voters & self.learners
+        overlap = (self.voters | self.voters_outgoing) & self.learners
         if overlap:
             raise ValueError(f"nodes {sorted(overlap)} cannot be both voter and learner")
 
     @property
+    def is_joint(self) -> bool:
+        return bool(self.voters_outgoing)
+
+    @property
+    def all_voters(self) -> frozenset[int]:
+        return self.voters | self.voters_outgoing
+
+    @property
     def members(self) -> frozenset[int]:
-        return self.voters | self.learners
+        return self.voters | self.voters_outgoing | self.learners
 
     def quorum(self) -> int:
         return len(self.voters) // 2 + 1
 
+    def has_quorum(self, acked: set[int] | frozenset[int]) -> bool:
+        in_ok = len(acked & self.voters) >= (len(self.voters) // 2 + 1)
+        if not self.voters_outgoing:
+            return in_ok
+        out_ok = len(acked & self.voters_outgoing) >= (len(self.voters_outgoing) // 2 + 1)
+        return in_ok and out_ok
+
+    def tally_votes(self, votes: dict[int, bool]) -> tuple[bool, bool]:
+        """Return ``(won, lost)`` across simple or joint voter sets."""
+
+        def _half(group: frozenset[int]) -> tuple[bool, bool]:
+            q = len(group) // 2 + 1
+            yes = sum(1 for v in group if votes.get(v) is True)
+            no = sum(1 for v in group if votes.get(v) is False)
+            return yes >= q, no > len(group) - q
+
+        w_in, l_in = _half(self.voters)
+        if not self.voters_outgoing:
+            return w_in, l_in
+        w_out, l_out = _half(self.voters_outgoing)
+        return (w_in and w_out), (l_in or l_out)
+
     def apply(self, cc: ConfChange) -> Membership:
+        if cc.change is ConfChangeType.ENTER_JOINT:
+            if self.is_joint:
+                raise ValueError("already in joint consensus configuration")
+            if not cc.voters:
+                raise ValueError("joint target voter set cannot be empty")
+            return Membership(
+                voters=cc.voters,
+                learners=self.learners - cc.voters - self.voters,
+                voters_outgoing=self.voters,
+            )
+        if cc.change is ConfChangeType.LEAVE_JOINT:
+            if not self.is_joint:
+                raise ValueError("not in joint consensus configuration")
+            return Membership(voters=self.voters, learners=self.learners)
+
+        if self.is_joint:
+            raise ValueError("cannot apply single-server change while in joint consensus")
         voters, learners = set(self.voters), set(self.learners)
         if cc.change is ConfChangeType.ADD_LEARNER:
             if cc.node_id in voters:

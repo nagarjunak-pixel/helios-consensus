@@ -22,10 +22,24 @@ from helios_consensus.core.node import (
     RaftNode,
     StateRole,
 )
+from helios_consensus.core.segmented_wal import (
+    PosixDiskFS,
+    SegmentedWAL,
+    SimulatedDiskFS,
+    WalCorruptionError,
+)
+from helios_consensus.core.snapshot_stream import (
+    ChunkAck,
+    SnapshotAssembler,
+    SnapshotChunk,
+    SnapshotIntegrityError,
+    split_snapshot,
+)
 from helios_consensus.core.storage import FileStorage, MemoryStorage
 
 __all__ = [
     "KNOWN_BUGS",
+    "ChunkAck",
     "ConfChange",
     "ConfChangeType",
     "Entry",
@@ -38,12 +52,20 @@ __all__ = [
     "Message",
     "MsgType",
     "NotLeaderError",
+    "PosixDiskFS",
     "ProposalDroppedError",
     "RaftConfig",
     "RaftLog",
     "RaftNode",
     "ReadState",
     "Ready",
+    "SegmentedWAL",
+    "SimulatedDiskFS",
     "Snapshot",
+    "SnapshotAssembler",
+    "SnapshotChunk",
+    "SnapshotIntegrityError",
     "StateRole",
+    "WalCorruptionError",
+    "split_snapshot",
 ]

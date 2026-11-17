@@ -38,7 +38,8 @@ from helios_consensus.core.node import (
     RaftNode,
     StateRole,
 )
-from helios_consensus.core.storage import MemoryStorage
+from helios_consensus.core.segmented_wal import SegmentedWAL, SimulatedDiskFS
+from helios_consensus.core.storage import MemoryStorage, Storage
 from helios_consensus.kv.state_machine import KVCommand, KVOp, KVStateMachine
 from helios_consensus.sim.network import NetworkStats, SimNetwork
 
@@ -52,6 +53,7 @@ class Fault(StrEnum):
     LOSS_BURST = "loss_burst"
     TRANSFER = "transfer_leader"
     MEMBERSHIP = "membership"
+    JOINT_RECONFIG = "joint_reconfig"
     HEAL = "heal"
 
 
@@ -76,6 +78,8 @@ class SimConfig:
     faults: tuple[Fault, ...] = ALL_FAULTS
     snapshot_threshold: int = 32
     log_matching_every: int = 25
+    use_segmented_wal: bool = False
+    sync_wal: bool = True
     raft: RaftConfig = field(default_factory=lambda: RaftConfig(election_tick=20, heartbeat_tick=3))
 
     def with_bugs(self, *bugs: str) -> SimConfig:
@@ -97,7 +101,8 @@ class SimConfig:
 @dataclass(slots=True)
 class SimNode:
     node_id: int
-    storage: MemoryStorage
+    storage: Storage
+    disk: SimulatedDiskFS | None = None
     raft: RaftNode | None = None
     sm: KVStateMachine = field(default_factory=KVStateMachine)
     incarnation: int = 0
@@ -217,16 +222,27 @@ class SimCluster:
         self.restarts = 0
         self.event_log: list[str] = []
         self._pending_member: int | None = None
-        self._removed_pending: int | None = None
+        self._removed_pending: set[int] = set()
 
     # ======================================================================= lifecycle
     def _create_node(self, nid: int) -> SimNode:
-        node = SimNode(node_id=nid, storage=MemoryStorage(self.bootstrap))
+        if self.cfg.use_segmented_wal:
+            disk = SimulatedDiskFS(seed=self.cfg.seed * 97 + nid)
+            storage: Storage = SegmentedWAL(
+                disk, self.bootstrap, max_segment_bytes=4096, sync=self.cfg.sync_wal
+            )
+            node = SimNode(node_id=nid, storage=storage, disk=disk)
+        else:
+            node = SimNode(node_id=nid, storage=MemoryStorage(self.bootstrap))
         self.nodes[nid] = node
         self._boot(node)
         return node
 
     def _boot(self, node: SimNode) -> None:
+        if node.disk is not None:
+            node.storage = SegmentedWAL(
+                node.disk, self.bootstrap, max_segment_bytes=4096, sync=self.cfg.sync_wal
+            )
         hs, snap, entries = node.storage.load()
         node.raft = RaftNode(
             node.node_id,
@@ -244,6 +260,8 @@ class SimCluster:
         if not node.alive:
             return
         node.raft = None
+        if node.disk is not None:
+            node.disk.power_cut(tear_unsynced_tail=True)
         node.incarnation += 1
         node.restart_at = self.now + restart_after if restart_after is not None else 0
         self.crashes += 1
@@ -364,8 +382,6 @@ class SimCluster:
         r.advance(rd)
         self._serve_reads(node)
         self._maybe_compact(node)
-        if node.node_id == self._removed_pending and node.node_id not in r.membership.members:
-            pass
 
     def _maybe_compact(self, node: SimNode) -> None:
         r = node.raft
@@ -555,6 +571,8 @@ class SimCluster:
             self._transfer_leadership()
         elif fault is Fault.MEMBERSHIP:
             self._membership_step()
+        elif fault is Fault.JOINT_RECONFIG:
+            self._joint_reconfig_step()
 
     def _current_members(self) -> set[int]:
         ldr = self.leader()
@@ -595,7 +613,7 @@ class SimCluster:
                 victim = self.rng.choice(sorted(voters - {r.id}))
                 r.propose_conf_change(ConfChange(ConfChangeType.REMOVE, victim))
                 self.membership_changes += 1
-                self._removed_pending = victim
+                self._removed_pending.add(victim)
                 self._log(f"remove voter n{victim}")
             else:
                 nid = self.next_node_id
@@ -604,6 +622,34 @@ class SimCluster:
                 self._create_node(nid)
                 self.membership_changes += 1
                 self._log(f"add learner n{nid}")
+        except (ProposalDroppedError, NotLeaderError, ValueError):
+            return
+
+    def _joint_reconfig_step(self) -> None:
+        ldr = self.leader()
+        if ldr is None or ldr.raft is None:
+            return
+        r = ldr.raft
+        if r.membership.is_joint or len(r.membership.voters) < 3:
+            return
+        candidates = sorted(r.membership.voters - {r.id})
+        if not candidates:
+            return
+        replace_count = 1 if len(candidates) == 1 else self.rng.randint(1, min(2, len(candidates)))
+        outgoing = set(self.rng.sample(candidates, replace_count))
+        incoming: set[int] = set()
+        for _ in range(replace_count):
+            nid = self.next_node_id
+            self.next_node_id += 1
+            incoming.add(nid)
+        new_voters = (set(r.membership.voters) - outgoing) | incoming
+        try:
+            r.propose_joint_reconfig(new_voters)
+            for nid in sorted(incoming):
+                self._create_node(nid)
+            self._removed_pending |= outgoing
+            self.membership_changes += 1
+            self._log(f"joint reconfig {sorted(r.membership.voters)} -> {sorted(new_voters)}")
         except (ProposalDroppedError, NotLeaderError, ValueError):
             return
 
@@ -617,21 +663,23 @@ class SimCluster:
         self._decommission_removed()
 
     def _decommission_removed(self) -> None:
-        nid = self._removed_pending
-        if nid is None:
+        if not self._removed_pending:
             return
         ldr = self.leader()
         if ldr is None or ldr.raft is None:
             return
         r = ldr.raft
-        if nid not in r.membership.members and r.pending_conf_index <= r.log.committed:
-            node = self.nodes[nid]
-            node.decommissioned = True
-            if node.alive:
-                node.raft = None
-                node.incarnation += 1
-            self._removed_pending = None
-            self._log(f"decommission n{nid}")
+        if r.membership.is_joint or r.pending_conf_index > r.log.committed:
+            return
+        for nid in sorted(list(self._removed_pending)):
+            if nid not in r.membership.members:
+                node = self.nodes[nid]
+                node.decommissioned = True
+                if node.alive:
+                    node.raft = None
+                    node.incarnation += 1
+                self._removed_pending.discard(nid)
+                self._log(f"decommission n{nid}")
 
     def _heal_everything(self) -> None:
         self.net.heal()

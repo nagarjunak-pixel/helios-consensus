@@ -32,6 +32,7 @@ from helios_consensus.core.messages import (
     LEADER_MESSAGES,
     VOTE_REQUESTS,
     ConfChange,
+    ConfChangeType,
     Entry,
     EntryKind,
     HardState,
@@ -43,6 +44,7 @@ from helios_consensus.core.messages import (
     Snapshot,
 )
 from helios_consensus.core.progress import Progress, ProgressState
+from helios_consensus.kernels.native_ring import get_helios_bridge
 
 KNOWN_BUGS = frozenset(
     {
@@ -158,7 +160,7 @@ class RaftNode:
         )
 
     def promotable(self) -> bool:
-        return self.id in self.membership.voters
+        return self.id in self.membership.all_voters
 
     def tick(self) -> None:
         if self.role is StateRole.LEADER:
@@ -185,10 +187,19 @@ class RaftNode:
             raise ProposalDroppedError("a configuration change is already pending")
         if self.log.term(self.log.committed) != self.term:
             raise ProposalDroppedError("leader has not committed an entry in its term yet")
-        self.membership.apply(cc)  # validate against the committed configuration
+        next_membership = self.membership.apply(cc)  # validate against committed configuration
+        for peer in sorted(next_membership.members):
+            if peer not in self.progress:
+                self.progress[peer] = Progress(match=0, next=self.log.last_index + 1)
         index = self._append_entry(EntryKind.CONFIG, cc.encode())
         self.pending_conf_index = index
         return index
+
+    def propose_joint_reconfig(self, new_voters: set[int] | frozenset[int]) -> int:
+        """Initiate a two-phase Joint Consensus reconfiguration to ``new_voters`` (§6)."""
+        return self.propose_conf_change(
+            ConfChange(change=ConfChangeType.ENTER_JOINT, voters=frozenset(new_voters))
+        )
 
     def read_index(self, request_id: int) -> None:
         """Request a linearizable read; a ``ReadState`` is emitted once it is safe."""
@@ -572,14 +583,20 @@ class RaftNode:
             )
 
     def _maybe_commit(self) -> bool:
-        voters = self.membership.voters
-        matches = sorted(
-            (self.progress[v].match for v in voters if v in self.progress), reverse=True
-        )
-        quorum = self.membership.quorum()
-        if len(matches) < quorum:
+        in_matches = [self.progress[v].match for v in self.membership.voters if v in self.progress]
+        if len(in_matches) < self.membership.quorum():
             return False
-        index = matches[quorum - 1]
+        out_matches: list[int] | None = None
+        if self.membership.voters_outgoing:
+            out_q = len(self.membership.voters_outgoing) // 2 + 1
+            out_matches = [
+                self.progress[v].match
+                for v in self.membership.voters_outgoing
+                if v in self.progress
+            ]
+            if len(out_matches) < out_q:
+                return False
+        index = get_helios_bridge().joint_commit_index(in_matches, out_matches)
         if index <= self.log.committed:
             return False
         if self.log.term(index) != self.term and "commit_prior_term" not in self.cfg.bugs:
@@ -593,25 +610,26 @@ class RaftNode:
         self.log.append([e])
         self.progress[self.id].maybe_update(e.index)
         self._maybe_commit()
-        self._bcast_append()
+        if self.role is StateRole.LEADER:
+            self._bcast_append()
         return e.index
 
     def _quorum_active(self) -> bool:
-        active = 0
+        active_nodes: set[int] = set()
         for peer, pr in self.progress.items():
             if peer == self.id:
-                active += peer in self.membership.voters
+                active_nodes.add(peer)
                 continue
-            if pr.recent_active and peer in self.membership.voters:
-                active += 1
+            if pr.recent_active:
+                active_nodes.add(peer)
             pr.recent_active = False
-        return active >= self.membership.quorum()
+        return self.membership.has_quorum(active_nodes)
 
     # ======================================================================= reads
     def _start_read(self, request_id: int) -> None:
         pending = _PendingRead(request_id=request_id, index=self.log.committed, acks={self.id})
         self._pending_reads.append(pending)
-        if len(pending.acks & self.membership.voters) >= self.membership.quorum():
+        if self.membership.has_quorum(pending.acks):
             self._release_reads_through(len(self._pending_reads) - 1)
         else:
             self._bcast_heartbeat()
@@ -620,7 +638,7 @@ class RaftNode:
         for pos, pending in enumerate(self._pending_reads):
             if pending.request_id == request_id:
                 pending.acks.add(src)
-                if len(pending.acks & self.membership.voters) >= self.membership.quorum():
+                if self.membership.has_quorum(pending.acks):
                     self._release_reads_through(pos)
                 return
 
@@ -680,7 +698,7 @@ class RaftNode:
             else:
                 self._become_leader()
             return
-        for peer in sorted(self.membership.voters - {self.id}):
+        for peer in sorted(self.membership.all_voters - {self.id}):
             self._send(
                 Message(
                     type=msg_type,
@@ -695,13 +713,10 @@ class RaftNode:
 
     def _poll(self, src: int, *, granted: bool) -> _VoteResult:
         self.votes.setdefault(src, granted)
-        voters = self.membership.voters
-        yes = sum(1 for v in voters if self.votes.get(v) is True)
-        no = sum(1 for v in voters if self.votes.get(v) is False)
-        quorum = self.membership.quorum()
-        if yes >= quorum:
+        won, lost = self.membership.tally_votes(self.votes)
+        if won:
             return _VoteResult.WON
-        if no > len(voters) - quorum:
+        if lost:
             return _VoteResult.LOST
         return _VoteResult.PENDING
 
@@ -756,15 +771,28 @@ class RaftNode:
 
     def _apply_committed_config(self) -> None:
         changed = False
+        entered_joint = False
         for idx in range(max(self._config_index + 1, self.log.first_index), self.log.committed + 1):
             e = self.log.entry(idx)
             if e.kind is EntryKind.CONFIG:
-                self.membership = self.membership.apply(ConfChange.decode(e.data))
+                cc = ConfChange.decode(e.data)
+                self.membership = self.membership.apply(cc)
                 self.config_history.append((idx, self.membership))
                 changed = True
+                entered_joint = cc.change is ConfChangeType.ENTER_JOINT
         self._config_index = max(self._config_index, self.log.committed)
         if changed and self.role is StateRole.LEADER:
             self._sync_progress_with_membership()
+            if (
+                entered_joint
+                and self.role is StateRole.LEADER
+                and self.membership.is_joint
+                and self.pending_conf_index <= self.log.committed
+                and self.log.term(self.log.committed) == self.term
+            ):
+                leave = ConfChange(change=ConfChangeType.LEAVE_JOINT)
+                leave_idx = self._append_entry(EntryKind.CONFIG, leave.encode())
+                self.pending_conf_index = leave_idx
 
     def _sync_progress_with_membership(self) -> None:
         members = self.membership.members
@@ -774,9 +802,14 @@ class RaftNode:
         for peer in sorted(members):
             if peer not in self.progress:
                 self.progress[peer] = Progress(match=0, next=self.log.last_index + 1)
-        if self.lead_transferee is not None and self.lead_transferee not in self.membership.voters:
+        if (
+            self.lead_transferee is not None
+            and self.lead_transferee not in self.membership.all_voters
+        ):
             self.lead_transferee = None
-        if self.id not in self.membership.voters:
+        if self.id not in self.membership.all_voters:
+            # Broadcast commit index to the new configuration before stepping down.
+            self._bcast_append()
             self._become_follower(self.term, None)
 
     # ======================================================================= helpers
