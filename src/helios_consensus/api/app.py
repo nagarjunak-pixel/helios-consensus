@@ -1,4 +1,4 @@
-"""FastAPI control plane and Raft DST, TLA+ Model Checker & HotStuff BFT Workbench."""
+"""FastAPI server for the HeliosConsensus Raft, Jepsen & Linearizability Workbench."""
 
 from __future__ import annotations
 
@@ -58,15 +58,19 @@ def _get_workbench_cache() -> dict[str, Any]:
     global _WORKBENCH_CACHE
     if _WORKBENCH_CACHE is None:
         bridge = get_helios_bridge()
+        jepsen_rep = run_jepsen_campaign(
+            num_seeds=6, ticks=600, settle_ticks=150, use_segmented_wal=True
+        )
         raft_rep = run_raft_dst_partition_benchmark(cluster_size=5)
         mc_rep = explore_consensus_state_space(max_term=2, max_log_len=2)
         bft_rep = run_hotstuff_3chain_benchmark(byzantine_f=2, num_blocks=6)
         wal_rep = benchmark_jump_hash_and_crc32c()
         _WORKBENCH_CACHE = {
             "service": "helios-consensus",
-            "version": "1.0.0",
+            "version": "1.1.0",
             "kernel_backend": bridge.backend,
             "is_native_cpp": bridge.is_native_cpp,
+            "jepsen": jepsen_rep.model_dump(),
             "raft_dst": raft_rep.model_dump(),
             "model_checker": mc_rep.model_dump(),
             "hotstuff_bft": bft_rep.model_dump(),
@@ -80,8 +84,8 @@ def _get_workbench_cache() -> dict[str, Any]:
 
 def create_app(ui_dist_dir: Path | None = None) -> FastAPI:
     app = FastAPI(
-        title="HeliosConsensus Raft DST, TLA+ Model Checker, HotStuff BFT & Native C++20 Engine",
-        version="1.0.0",
+        title="HeliosConsensus — Raft Consensus, Jepsen Fault-Injection & Linearizability Workbench",
+        version="1.1.0",
     )
 
     @app.get("/healthz")
@@ -90,7 +94,7 @@ def create_app(ui_dist_dir: Path | None = None) -> FastAPI:
         return {
             "status": "ok",
             "service": "helios-consensus",
-            "version": "1.0.0",
+            "version": "1.1.0",
             "kernel_backend": bridge.backend,
             "is_native_cpp": bridge.is_native_cpp,
         }

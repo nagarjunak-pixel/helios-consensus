@@ -4,13 +4,35 @@ build-backend = "hatchling.build"
 
 [project]
 name = "helios-consensus"
-version = "1.0.0"
-description = "Deterministic Simulation Raft Engine, TLA+-Style Explicit-State Model Checker, HotStuff 3-Chain BFT Quorum Certificates & Native C++20 Jump-Hash + CRC32C WAL Runtime"
+version = "1.1.0"
+description = "Library-style Raft consensus engine in Python with segmented binary WAL, asyncio TCP transport, Multi-Raft sharding, Jepsen-style fault-injection simulator, Wing-Gong-Lowe linearizability checker, and C++20 kernels"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [
   { name = "Nagarjuna Kamireddy", email = "sendemailtonagarjuna@gmail.com" }
+]
+keywords = [
+  "raft",
+  "consensus",
+  "distributed-systems",
+  "linearizability",
+  "jepsen",
+  "deterministic-simulation",
+  "wal",
+  "multiraft",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Distributed Computing",
+  "Typing :: Typed",
 ]
 dependencies = [
   "numpy>=1.26.0",
@@ -21,6 +43,12 @@ dependencies = [
   "typer>=0.12.5",
   "rich>=13.9.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nagarjunak-pixel/helios-consensus"
+Repository = "https://github.com/nagarjunak-pixel/helios-consensus"
+Issues = "https://github.com/nagarjunak-pixel/helios-consensus/issues"
+Changelog = "https://github.com/nagarjunak-pixel/helios-consensus/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -37,6 +65,17 @@ helios = "helios_consensus.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/helios_consensus"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/helios_consensus/**",
+  "tests/**",
+  "README.md",
+  "LICENSE",
+  "CHANGELOG.md",
+  "CITATION.cff",
+  "pyproject.toml",
+]
 
 [tool.ruff]
 line-length = 100
